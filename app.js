@@ -2,9 +2,27 @@ import express from "express";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const logFilePath = path.join(__dirname, 'logs/app.log');
+
 dotenv.config();
 
-
+// 写入日志函数
+function logToFile(message) {
+  const timestamp = new Date().toISOString();
+  const logMessage = `${timestamp} - ${message}\n`;
+  fs.appendFile(logFilePath, logMessage, (err) => {
+    if (err) {
+      console.error('Error writing to log file:', err);
+    }
+  });
+}
 
 if (!process.env.DIFY_API_URL) throw new Error("DIFY API URL is required.");
 function generateId() {
@@ -84,6 +102,13 @@ app.get('/v1/models', (req, res) => {
 });
 
 app.post("/v1/chat/completions", async (req, res) => {
+  //输出req中所有内容，包括headers和body
+  logToFile(JSON.stringify(req.headers, null, 2));
+
+  logToFile(JSON.stringify(req.body, null, 2));
+
+  console.log('Request Body:', JSON.stringify(req.body, null, 2));
+
   const authHeader =
     req.headers["authorization"] || req.headers["Authorization"];
   if (!authHeader) {
@@ -104,12 +129,12 @@ app.post("/v1/chat/completions", async (req, res) => {
     const data = req.body;
     const messages = data.messages;
     let queryString;
+    const lastMessage = messages[messages.length - 1];
     if (botType === 'Chat') {
-      const lastMessage = messages[messages.length - 1];
       queryString = `here is our talk history:\n'''\n${messages
-        .slice(0, -1) 
-        .map((message) => `${message.role}: ${message.content}`)
-        .join('\n')}\n'''\n\nhere is my question:\n${lastMessage.content}`;
+          .slice(0, -1) 
+          .map((message) => `${message.role}: ${Array.isArray(message.content) ? JSON.stringify(message.content) : message.content}`)
+          .join('\n')}\n'''\n\nhere is my question:\n${Array.isArray(lastMessage.content) ? JSON.stringify(lastMessage.content) : lastMessage.content}`;
     } else if (botType === 'Completion' || botType === 'Workflow') {
       queryString = messages[messages.length - 1].content;
     }
@@ -133,6 +158,21 @@ app.post("/v1/chat/completions", async (req, res) => {
         auto_generate_name: false
       };
     }
+
+    //让requestBody支持文件传输
+    //如果最后一条消息的content是数组，且第一个元素的"type"="image_url"
+    if (Array.isArray(lastMessage.content) && lastMessage.content[0].type === "image_url") {
+      requestBody.files =[{"type":"image",
+      "transfer_method":"remote_url",
+      "url": lastMessage.content[0].image_url.url
+    
+     }]
+       
+    }
+
+    logToFile(JSON.stringify(requestBody));
+
+
     const resp = await fetch(process.env.DIFY_API_URL + apiPath, {
       method: "POST",
       headers: {
@@ -363,6 +403,7 @@ app.post("/v1/chat/completions", async (req, res) => {
     }
   } catch (error) {
     console.error("Error:", error);
+    logToFile(error);
   }
 });
 
