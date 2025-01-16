@@ -5,10 +5,20 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    network_mode: bridge
     ports:
       - "3000:3000"
     restart: always
+    networks:
+      - ai-network
     environment: 
       - DIFY_API_URL=https://api.dify.ai/v1
       - BOT_TYPE=Chat
+    #卷映射，映射本地文件到容器中
+    volumes:
+      - ./app.js:/usr/src/app/app.js
+      - ./logs:/usr/src/app/logs
+
+networks:
+  ai-network:
+    driver: bridge
+    name: ai-network
